@@ -3,10 +3,7 @@ from PySide6 import QtCore, QtUiTools, QtWidgets
 import sys
 from typing import Union
 
-for p in sorted(sys.path):
-    print(p)
-
-from .model import ResultsModel, ResultsProxyModel
+from metsearch.model import ResultsModel, ResultsProxyModel
 
 
 
@@ -102,7 +99,7 @@ class MetSearch(QtCore.QObject):
 
     @QtCore.Slot()
     def search_text_changed(self, new_value: str):
-        pass
+        self.model.search(new_value)
 
     @QtCore.Slot()
     def sort_changed(self, *args):
@@ -110,9 +107,8 @@ class MetSearch(QtCore.QObject):
             order = QtCore.Qt.SortOrder.AscendingOrder
         else:
             order = QtCore.Qt.SortOrder.DescendingOrder
-        print(order)
 
-        self.proxy_model.sort(order)
+        self.proxy_model.sort(0, order)
 
     # -------------------------------------------------------------------------
     # METHODS
