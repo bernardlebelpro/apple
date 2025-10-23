@@ -1,10 +1,11 @@
+import argparse
 from contextlib import contextmanager
 import logging
 import os
 from PySide6 import QtCore, QtUiTools, QtWidgets
-import sys
 from typing import Union
 
+from metsearch.contants import DisplayFields, ObjectFields
 from metsearch.model import ObjectsModel, ObjectsProxyModel
 
 
@@ -15,7 +16,7 @@ UI_FILEPATH = os.path.join(os.path.dirname(__file__), "metsearch.ui")
 HEIGHT = 600
 WIDTH = 600
 
-class MetSearch(QtCore.QObject):
+class MainWindow(QtCore.QObject):
     """The main application object."""
 
     def __init__(self, parent: Union[QtWidgets.QWidget, None] = None):
@@ -28,11 +29,10 @@ class MetSearch(QtCore.QObject):
             parent=self.ui
         )
         self._proxy_model.setSourceModel(self._model)
+        self._selection_model = QtCore.QItemSelectionModel(self._proxy_model)
 
         self.setup_ui()
         self.connect_signals()
-
-        self._ui.results_view.setModel(self._proxy_model)
 
     # -------------------------------------------------------------------------
     # PROPERTIES
@@ -45,6 +45,10 @@ class MetSearch(QtCore.QObject):
     @property
     def proxy_model(self) -> ObjectsProxyModel:
         return self._proxy_model
+
+    @property
+    def selection_model(self) -> QtCore.QItemSelectionModel:
+        return self._selection_model
 
     @property
     def ui(self) -> QtWidgets.QMainWindow:
@@ -60,6 +64,8 @@ class MetSearch(QtCore.QObject):
     # -------------------------------------------------------------------------
 
     def connect_signals(self):
+        self.model.cache.timer_progress.connect(self.update_countdown)
+
         self.ui.classification_combox.currentTextChanged.connect(
             self.classification_changed
         )
@@ -82,6 +88,11 @@ class MetSearch(QtCore.QObject):
             self.sort_changed
         )
 
+        self.selection_model.selectionChanged.connect(
+            self.selected_row_changed
+        )
+
+
     def setup_ui(self):
         loader = QtUiTools.QUiLoader()
         self._ui = loader.load(UI_FILEPATH, parentWidget=None)
@@ -93,6 +104,19 @@ class MetSearch(QtCore.QObject):
             WIDTH,
             HEIGHT
         )  # x, y, width, height
+
+        self.ui.results_view.setSelectionMode(
+            self.ui.results_view.SelectionMode.SingleSelection
+        )
+        self.ui.results_view.setModel(self._proxy_model)
+        self.ui.results_view.setSelectionModel(self.selection_model)
+
+        form_layout = self.ui.metadata_widget.layout()
+        for display_name in DisplayFields.FIELDS:
+            form_layout.addRow(
+                QtWidgets.QLabel(display_name),
+                QtWidgets.QLabel("")
+            )
 
     # -------------------------------------------------------------------------
     # SLOT METHODS
@@ -124,12 +148,45 @@ class MetSearch(QtCore.QObject):
             self.ui.imageonly_checkbox.setChecked(False)
             self.ui.sortasc_radio.setChecked(True)
             self.model.reset()
+            self.clear_metadata()
 
     @QtCore.Slot()
     def search_text_changed(self):
-        """Update the model after the user has edited the search text."""
-        new_value = self.ui.searchtext_lineedit.text()
-        self.model.search(new_value)
+        self.clear_metadata()
+        text = self.ui.searchtext_lineedit.text()
+        self.model.search(search_term=text)
+
+    @QtCore.Slot()
+    def selected_row_changed(
+            self,
+            selected: QtCore.QItemSelection,
+            deselected: QtCore.QItemSelection
+    ):
+        """Update the right-side widgets when an object is selected in the list."""
+        indices = selected.indexes()
+        if indices:
+            for index in indices:
+                row = index.row()
+                url = self.model.cache.urls[row]
+                document = self.model.cache.get_object(url)
+                layout = self.ui.metadata_widget.layout()
+
+                for i in range(layout.rowCount()):
+                    display_name = layout.itemAt(
+                        i,
+                        layout.ItemRole.LabelRole
+                    ).widget().text()
+
+                    label = layout.itemAt(
+                        i,
+                        layout.ItemRole.FieldRole
+                    ).widget()
+
+                    key = DisplayFields.FIELDS_TO_OBJECT_FIELDS[display_name]
+                    value = document.get(key, "")
+                    label.setText(str(value))
+        else:
+            self.clear_metadata()
 
     @QtCore.Slot()
     def sort_changed(self, *args):
@@ -140,6 +197,10 @@ class MetSearch(QtCore.QObject):
             order = QtCore.Qt.SortOrder.DescendingOrder
 
         self.model.sort_order = order
+
+    @QtCore.Slot(int)
+    def update_countdown(self, seconds: int):
+        self.ui.countdown_label.setText(str(seconds))
 
     # -------------------------------------------------------------------------
     # METHODS
@@ -172,13 +233,37 @@ class MetSearch(QtCore.QObject):
                     str(e)
                 )
 
+    def clear_metadata(self):
+        layout = self.ui.metadata_widget.layout()
+        for i in range(layout.rowCount()):
+            layout.itemAt(
+                i,
+                layout.ItemRole.FieldRole
+            ).widget().setText("")
+
     def get_classifications(self):
         pass
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.WARNING)
-    app = QtWidgets.QApplication(sys.argv)
-    window = MetSearch()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--info", action="store_true")
+    parser.add_argument("--debug", action="store_true")
+    args = vars(parser.parse_args())
+
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(levelname)s [%(name)s] %(message)s"
+    )
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+
+    level = logging.WARNING
+    if args["info"]:
+        logging.getLogger().setLevel(logging.INFO)
+    if args["debug"]:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    app = QtWidgets.QApplication([])
+    window = MainWindow()
     window.ui.show()
     app.exec()

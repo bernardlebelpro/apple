@@ -1,9 +1,6 @@
 from dataclasses import dataclass
 
 
-MAX_RESULTS = 80
-
-
 @dataclass
 class Endpoints:
     BASE = "https://collectionapi.metmuseum.org/public/collection/v1"
@@ -23,16 +20,53 @@ class ObjectFields:
     PRIMARY_IMAGE = "primaryImage"
     TITLE = "title"
 
-    # Map field display names to the object's fields
-    DISPLAY_FIELDS = (
-        (TITLE, "Title"),
-        (ARTIST_DISPLAY_NAME, "Artist"),
-        (MEDIUM, "Medium"),
-        (OBJECT_DATE, "Date"),
-        (CULTURE, "Culture"),
-        (DEPARTMENT, "Department"),
-        (CLASSIFICATION, "Classification"),
+
+@dataclass
+class DisplayFields:
+    TITLE = "Title"
+    ARTIST = "Artist"
+    MEDIUM = "Medium"
+    DATE = "Date"
+    CULTURE = "Culture"
+    DEPARTMENT = "Department"
+    CLASSIFICATION = "Classification"
+
+    FIELDS = (
+        TITLE,
+        ARTIST,
+        MEDIUM,
+        DATE,
+        CULTURE,
+        DEPARTMENT,
+        CLASSIFICATION,
     )
+
+    FIELDS_TO_OBJECT_FIELDS = {
+        TITLE: ObjectFields.TITLE,
+        ARTIST: ObjectFields.ARTIST_DISPLAY_NAME,
+        MEDIUM: ObjectFields.MEDIUM,
+        DATE: ObjectFields.OBJECT_DATE,
+        CULTURE: ObjectFields.CULTURE,
+        DEPARTMENT: ObjectFields.DEPARTMENT,
+        CLASSIFICATION: ObjectFields.CLASSIFICATION,
+    }
+
+    OBJECT_FIELDS_TO_FIELDS = {
+        ObjectFields.TITLE: TITLE,
+        ObjectFields.ARTIST_DISPLAY_NAME: ARTIST,
+        ObjectFields.MEDIUM: MEDIUM,
+        ObjectFields.OBJECT_DATE: DATE,
+        ObjectFields.CULTURE: CULTURE,
+        ObjectFields.DEPARTMENT: DEPARTMENT,
+        ObjectFields.CLASSIFICATION: CLASSIFICATION,
+    }
+
+
+@dataclass
+class Requests:
+    SECONDS = 60
+    INTERVAL = 1000
+    MAX_RESULTS = 80
 
 
 @dataclass
