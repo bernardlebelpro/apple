@@ -25,14 +25,10 @@ class MainWindow(QtCore.QObject):
 
         self._image_widget = QtWidgets.QLabel()
         self._images = ImageCache()
+        self._model: Union[ObjectsModel, None] = None
+        self._proxy_model: Union[ObjectsProxyModel, None] = None
+        self._selection_model: Union[QtCore.QItemSelectionModel, None] = None
         self._ui: Union[QtWidgets.QMainWindow, None] = None
-        self._proxy_model = ObjectsProxyModel(parent=self.ui)
-        self._model = ObjectsModel(
-            proxy_model=self._proxy_model,
-            parent=self.ui
-        )
-        self._proxy_model.setSourceModel(self._model)
-        self._selection_model = QtCore.QItemSelectionModel(self._proxy_model)
 
         self.setup_ui()
         self.connect_signals()
@@ -108,7 +104,7 @@ class MainWindow(QtCore.QObject):
         )
 
         self.ui.imageonly_checkbox.stateChanged.connect(
-            self.image_only_changed
+            self.proxy_model.set_image_only
         )
 
         self.ui.reset_button.clicked.connect(self.reset_clicked)
@@ -133,6 +129,20 @@ class MainWindow(QtCore.QObject):
         """Assemble and configure the UI."""
         loader = QtUiTools.QUiLoader()
         self._ui = loader.load(UI_FILEPATH, parentWidget=None)
+
+        # ------
+        # Models
+
+        self._proxy_model = ObjectsProxyModel(main_window=self)
+        self._model = ObjectsModel(
+            proxy_model=self.proxy_model,
+            parent=self.ui
+        )
+        self._proxy_model.setSourceModel(self.model)
+        self._selection_model = QtCore.QItemSelectionModel(self.proxy_model)
+
+        # ---------
+        # Actual UI
 
         self.ui.setWindowTitle("MET Search")
         self.ui.setGeometry(
@@ -167,36 +177,6 @@ class MainWindow(QtCore.QObject):
     @QtCore.Slot()
     def classification_changed(self, new_value: str):
         pass
-
-    @QtCore.Slot()
-    def image_only_changed(self, new_value: bool):
-        """Update the UI when the image-only filter state has changed.
-
-        Args:
-            new_value (bool): The new image-only filter state.
-        """
-        # Record the model index of the selected row.
-        # After the proxy model updates, we use that index
-        # to select the same row in the updated proxy model.
-        index = None
-        selected = self.selection_model.selectedIndexes()
-        if selected:
-            proxy_index = selected[0]
-            index = self.proxy_model.mapToSource(proxy_index)
-
-        self.proxy_model.image_only = new_value
-
-        if index is not None:
-            proxy_index = self.proxy_model.mapFromSource(index)
-            self.selection_model.setCurrentIndex(
-                proxy_index,
-                self.selection_model.SelectionFlag.ClearAndSelect
-            )
-
-            self.selected_row_changed(
-                self.selection_model.selection(),
-                QtCore.QItemSelection()
-            )
 
     @QtCore.Slot()
     def reset_clicked(self):

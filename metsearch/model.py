@@ -15,8 +15,16 @@ logger = logging.getLogger(__name__)
 class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
     """Proxy model that filters the results."""
 
-    def __init__(self, parent: Union[QtWidgets.QWidget, None] = None) -> None:
-        super().__init__(parent)
+    def __init__(self, main_window) -> None:
+        """Initialize the proxy model.
+
+        Args:
+            main_window (metsearch.mainwindow.MainWindow): The app's main
+                window.
+        """
+        super().__init__(main_window.ui)
+        self._main_window = main_window
+
         self.setSortRole(QtCore.Qt.ItemDataRole.DisplayRole)
         self.setSortCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         self.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
@@ -37,17 +45,14 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
         """
         return self._image_only
 
-    @image_only.setter
-    def image_only(self, value: bool):
-        """Update the image-only filter state.
+    @property
+    def main_window(self):
+        """The app's main window.
 
-        This invalidates this proxy model's filter.
-
-        Args:
-            value (bool): The new filter state.
+        Returns:
+            metsearch.mainwindow.MainWindow
         """
-        self._image_only = value
-        self.invalidateFilter()
+        return self._main_window
 
     # -------------------------------------------------------------------------
     # RE-IMPLEMENTED METHODS
@@ -84,6 +89,38 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
             return False
 
         return super().filterAcceptsRow(source_row, source_parent)
+
+    def invalidateFilter(self):
+        """Ensure the selected row remains selected after filtering.
+
+        If the initial proxy index is no longer visible after the filtering,
+        then nothing is selected.
+        """
+        index = None
+        selection_model = self.main_window.ui.results_view.selectionModel()
+        selected = selection_model.selectedIndexes()
+        if selected:
+            proxy_index = selected[0]
+            index = self.mapToSource(proxy_index)
+
+        super().invalidateFilter()
+
+        if index is not None:
+            proxy_index = self.mapFromSource(index)
+            if proxy_index.isValid():
+                selection_model.setCurrentIndex(
+                    proxy_index,
+                    selection_model.SelectionFlag.ClearAndSelect
+                )
+
+                self.main_window.selected_row_changed(
+                    selection_model.selection(),
+                    QtCore.QItemSelection()
+                )
+
+    def set_image_only(self, value: bool):
+        self._image_only = value
+        self.invalidateFilter()
 
 
 class ObjectsModel(QtCore.QAbstractItemModel):
