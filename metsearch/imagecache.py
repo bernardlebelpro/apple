@@ -9,6 +9,10 @@ from metsearch.classproperty import classproperty
 logger = logging.getLogger(__name__)
 
 
+WIDTH = 512
+HEIGHT = 512
+
+
 class ImageCache:
     """Thumbnail database."""
 
@@ -73,8 +77,8 @@ class ImageCache:
                 pixmap = QtGui.QPixmap()
                 pixmap.loadFromData(response.content)
                 pixmap = pixmap.scaled(
-                    256,
-                    256,
+                    WIDTH,
+                    HEIGHT,
                     QtCore.Qt.AspectRatioMode.KeepAspectRatio,
                     QtCore.Qt.TransformationMode.SmoothTransformation
                 )

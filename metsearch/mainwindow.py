@@ -1,4 +1,3 @@
-import argparse
 from contextlib import contextmanager
 import logging
 import os
@@ -14,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 UI_FILEPATH = os.path.join(os.path.dirname(__file__), "metsearch.ui")
-HEIGHT = 600
-WIDTH = 600
+HEIGHT = 800
+WIDTH = 1200
 
 class MainWindow(QtCore.QObject):
     """The main application object."""
