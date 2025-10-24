@@ -22,7 +22,6 @@ class MainWindow(QtCore.QObject):
     def __init__(self, parent: Union[QtWidgets.QWidget, None] = None):
         super().__init__(parent)
 
-        self._image_widget = QtWidgets.QLabel()
         self._images = ImageCache()
         self._model: Union[ObjectsModel, None] = None
         self._proxy_model: Union[ObjectsProxyModel, None] = None
@@ -35,15 +34,6 @@ class MainWindow(QtCore.QObject):
     # -------------------------------------------------------------------------
     # PROPERTIES
     # -------------------------------------------------------------------------
-
-    @property
-    def image_widget(self) -> QtWidgets.QLabel:
-        """The image that holds the image for the current selection.
-
-        Returns:
-            QtWidgets.QLabel
-        """
-        return self._image_widget
 
     @property
     def images(self) -> ImageCache:
@@ -102,10 +92,6 @@ class MainWindow(QtCore.QObject):
 
         self.model.cache.timer_progress.connect(self.update_countdown)
 
-        self.ui.classification_combox.currentTextChanged.connect(
-            self.classification_changed
-        )
-
         self.ui.imageonly_checkbox.stateChanged.connect(
             self.proxy_model.set_image_only
         )
@@ -161,9 +147,6 @@ class MainWindow(QtCore.QObject):
         self.ui.results_view.setModel(self._proxy_model)
         self.ui.results_view.setSelectionModel(self.selection_model)
 
-        layout = QtWidgets.QVBoxLayout()
-        self.ui.image_widget.setLayout(layout)
-        layout.addWidget(self.image_widget)
         self.set_image()
 
         form_layout = self.ui.metadata_widget.layout()
@@ -176,10 +159,6 @@ class MainWindow(QtCore.QObject):
     # -------------------------------------------------------------------------
     # SLOT METHODS
     # -------------------------------------------------------------------------
-
-    @QtCore.Slot()
-    def classification_changed(self, new_value: str):
-        pass
 
     @QtCore.Slot()
     def reset_clicked(self):
@@ -323,9 +302,6 @@ class MainWindow(QtCore.QObject):
                 layout.ItemRole.FieldRole
             ).widget().setText("")
 
-    def get_classifications(self):
-        pass
-
     def set_image(self, pixmap: Union[QtGui.QPixmap, None] = None):
         """Update the image label with a pixmap.
 
@@ -333,4 +309,4 @@ class MainWindow(QtCore.QObject):
             pixmap (QtGui.QPixmap|None): The pixmap to display. If None,
                 the default pixmap is used.
         """
-        self.image_widget.setPixmap(pixmap or self.images.default_pixmap)
+        self.ui.image_label.setPixmap(pixmap or self.images.default_pixmap)
