@@ -64,16 +64,6 @@
           <widget class="QLineEdit" name="searchtext_lineedit"/>
          </item>
          <item>
-          <widget class="QLabel" name="classification_label">
-           <property name="text">
-            <string>Classification</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QComboBox" name="classification_combox"/>
-         </item>
-         <item>
           <widget class="QCheckBox" name="imageonly_checkbox">
            <property name="text">
             <string>Image only</string>
