@@ -351,27 +351,3 @@ class MainWindow(QtCore.QObject):
                 the default pixmap is used.
         """
         self.image_widget.setPixmap(pixmap or self.images.default_pixmap)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--info", action="store_true")
-    parser.add_argument("--debug", action="store_true")
-    args = vars(parser.parse_args())
-
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(levelname)s [%(name)s] %(message)s"
-    )
-    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
-
-    level = logging.WARNING
-    if args["info"]:
-        logging.getLogger().setLevel(logging.INFO)
-    if args["debug"]:
-        logging.getLogger().setLevel(logging.DEBUG)
-
-    app = QtWidgets.QApplication([])
-    window = MainWindow()
-    window.ui.show()
-    app.exec()
