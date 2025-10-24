@@ -1,14 +1,28 @@
 import logging
 import json
-from PySide6 import QtCore, QtGui, QtNetwork, QtWidgets
+from PySide6 import QtCore, QtNetwork
 import requests
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
 
 from metsearch.contants import Endpoints, Requests
 from metsearch.timer import Timer
 
 
 logger = logging.getLogger(__name__)
+
+
+class Request:
+    def __init__(self, key: int, url: str):
+        self._key = key
+        self._url = url
+
+    @property
+    def key(self) -> int:
+        return self._key
+
+    @property
+    def url(self) -> str:
+        return self._url
 
 
 class ObjectCache(QtCore.QObject):
@@ -18,7 +32,19 @@ class ObjectCache(QtCore.QObject):
     """
 
     # Emitted after the cache has been updated.
+    # An update happens after every request that returns.
+    # This allows updating the model iteratively, in a non-blocking way.
     cache_updated = QtCore.Signal(str)
+
+    # Emitted when a "batch" of requests have completed.
+    # Since requests run asynchronously, it's a way of know when they
+    # all have finished.
+    # This allows invalidating the proxy model's filter,
+    # so that rows can be resorted and hidden if there are documents.
+    # Without it, the rows for which there is no document remain visible
+    # until the next time the queue is processed, which is usually
+    # every minute, IF there are new requests.
+    requests_finished = QtCore.Signal()
 
     # Emitted every second.
     timer_progress = QtCore.Signal(int)
@@ -37,10 +63,16 @@ class ObjectCache(QtCore.QObject):
         self._network_manager = QtNetwork.QNetworkAccessManager(self)
         self._urls: List[str] = []
         self._objects: Dict[str, Dict] = {}
-        self._processed_urls: List[str] = []
         self._proxy_model = proxy_model
-        self._queue: List[str] = []
+        self._queue: List[Request] = []
         self._requested_urls: List[str] = []
+
+        self._processed_requests: Dict[int, Dict] = {
+            0: {
+                "count": 0,
+                "total": 0
+            }
+        }
 
         self._timer = Timer(parent=self)
         self._timer.timeout.connect(self.timer_timeout)
@@ -94,15 +126,32 @@ class ObjectCache(QtCore.QObject):
         return self._objects
 
     @property
-    def processed_urls(self) -> List[str]:
-        return self._processed_urls
+    def processed_requests(self) -> Dict[int, Dict]:
+        """The internal map of process requests.
+
+        Returns:
+            dict[int, dict]: Keys are ints (an identifier for a batch of
+            requests. Values are a dict with "count" and "total" keys.
+            "count" represents the number of requests that have been processed
+            for the key. "total" represents the total number of requests
+            for the key.
+
+            Ex:
+                {
+                    3: {
+                        "count": 3,
+                        "total": 10
+                    }
+                }
+        """
+        return self._processed_requests
 
     @property
     def proxy_model(self):
         return self._proxy_model
 
     @property
-    def queue(self) -> List[str]:
+    def queue(self) -> List[Request]:
         return self._queue
 
     @property
@@ -135,14 +184,35 @@ class ObjectCache(QtCore.QObject):
     # METHODS
     # -------------------------------------------------------------------------
 
-    def cache_object(self, reply: QtNetwork.QNetworkReply):
+    def extend_queue(self, urls: List[str]):
+        """Extend the queue with a list of object URLs to request.
+
+        Args:
+            urls (list[str]): A list of object URLs to request.
+        """
+        key = max(self.processed_requests) + 1
+        self.processed_requests[key] = {
+            "count": 0,
+            "total": len(urls)
+        }
+
+        requests = [Request(key=key, url=url) for url in urls]
+        self.queue.extend(requests)
+
+    def cache_object(
+            self,
+            reply: QtNetwork.QNetworkReply,
+            key: Union[int, None] = None
+    ):
         """Cache the object document.
 
         Args:
             reply (QtNetwork.QNetworkReply): The reply from the network request.
+            key (int|None): A key for the request in the processed_requests
+                dict. If not None, will increment the count of process requests
+                by one for this key.
         """
         url = reply.url().toString()
-        self.processed_urls.append(url)
 
         byte_array = reply.readAll()
         reply.deleteLater()
@@ -180,11 +250,22 @@ class ObjectCache(QtCore.QObject):
             self.bad_urls.append(url)
             self.cache_updated.emit(url)
 
-    def execute_request(self, url: str):
+        if key is None:
+            return
+
+        requests = self.processed_requests[key]
+        requests["count"] += 1
+        if requests["count"] == requests["total"]:
+            self.requests_finished.emit()
+
+    def execute_request(self, url: str, key: Union[int, None] = None):
         """Initiate a network request for an object URL.
 
         Args:
             url (str): The requested object's URL.
+            key (int|None): A key for the request in the processed_requests
+                dict. If not None, will increment the count of process requests
+                by one for this key when the request completes.
         """
         request = QtNetwork.QNetworkRequest(QtCore.QUrl(url))
         request.setRawHeader(b"Content-Type", b"application/json")
@@ -193,25 +274,28 @@ class ObjectCache(QtCore.QObject):
 
         reply = self.network_manager.get(request)
         reply.finished.connect(
-            lambda: self.cache_object(reply)
+            lambda: self.cache_object(reply, key=key)
         )
 
-    def get_object(self, url: str) -> Dict:
+    def get_object(self, url: str, key: Union[int, None] = None) -> Dict:
         """Get the object document from the cache or download it.
 
         Args:
             url (str): The requested object's URL.
+            key (int|None): A key for the request in the processed_requests
+                dict. If not None, will increment the count of process requests
+                by one for this key when the request completes.
 
         Returns:
             dict: The object document. If the object doesn't have a document
             yet, an empty dict is returned.
         """
 
-        if url in self._requested_urls:
+        if url in self.requested_urls:
             return self.objects[url]
 
-        self._requested_urls.append(url)
-        self.execute_request(url)
+        self.requested_urls.append(url)
+        self.execute_request(url=url, key=key)
 
         return {}
 
@@ -253,7 +337,7 @@ class ObjectCache(QtCore.QObject):
         # Get the first 80 objects.
 
         urls = self.urls[:Requests.MAX_RESULTS]
-        self.queue.extend(urls)
+        self.extend_queue(urls)
         self.last_index += len(urls)
         self.process_queue()
 
@@ -270,16 +354,14 @@ class ObjectCache(QtCore.QObject):
 
         self.counter = 0
         while self.counter < Requests.MAX_RESULTS and self.queue:
-            url = self.queue.pop(0)
-            self.get_object(url)
+            request = self.queue.pop(0)
+            self.get_object(request.url, key=request.key)
             self.counter += 1
 
         logger.debug(
             "Finished processing queue, has %s items left.",
             len(self.queue)
         )
-
-        self.proxy_model.invalidate()
 
         self.timer.start()
         logger.debug(

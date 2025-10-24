@@ -24,11 +24,12 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
         """
         super().__init__(main_window.ui)
         self._main_window = main_window
+        self._sort_order = QtCore.Qt.SortOrder.AscendingOrder
 
         self.setSortRole(QtCore.Qt.ItemDataRole.DisplayRole)
         self.setSortCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         self.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        self.setDynamicSortFilter(True)
+        self.setDynamicSortFilter(False)
 
         self._image_only: bool = False
 
@@ -53,6 +54,27 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
             metsearch.mainwindow.MainWindow
         """
         return self._main_window
+
+    @property
+    def sort_order(self) -> QtCore.Qt.SortOrder:
+        """Get the current sort order.
+
+        Returns:
+            QtCore.Qt.SortOrder:
+        """
+        return self._sort_order
+
+    @sort_order.setter
+    def sort_order(self, value: QtCore.Qt.SortOrder):
+        """Update the current sort order.
+
+        NOTE: This causes a sort to occur.
+
+        Args:
+            value (QtCore.Qt.SortOrder): The new sort order.
+        """
+        self._sort_order = value
+        self.sort(0, value)
 
     # -------------------------------------------------------------------------
     # RE-IMPLEMENTED METHODS
@@ -104,6 +126,7 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
             index = self.mapToSource(proxy_index)
 
         super().invalidateFilter()
+        self.sort(0, self.sort_order)
 
         if index is not None:
             proxy_index = self.mapFromSource(index)
@@ -119,6 +142,11 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
                 )
 
     def set_image_only(self, value: bool):
+        """Record the new state for the image-only filter, update the model.
+
+        Args:
+            value (bool): The new image-only filter state.
+        """
         self._image_only = value
         self.invalidateFilter()
 
@@ -137,7 +165,6 @@ class ObjectsModel(QtCore.QAbstractItemModel):
 
         self._cache = ObjectCache(proxy_model)
         self._proxy_model = proxy_model
-        self._sort_order = QtCore.Qt.SortOrder.AscendingOrder
 
     # -------------------------------------------------------------------------
     # PROPERTIES
@@ -160,20 +187,6 @@ class ObjectsModel(QtCore.QAbstractItemModel):
             metsearch.model.ObjectsProxyModel:
         """
         return self._proxy_model
-
-    @property
-    def sort_order(self) -> QtCore.Qt.SortOrder:
-        """Get the current sort order.
-
-        Returns:
-            QtCore.Qt.SortOrder:
-        """
-        return self._sort_order
-
-    @sort_order.setter
-    def sort_order(self, value: QtCore.Qt.SortOrder):
-        self._sort_order = value
-        self.proxy_model.sort(0, value)
 
     # -------------------------------------------------------------------------
     # SETUP METHODS
@@ -241,7 +254,7 @@ class ObjectsModel(QtCore.QAbstractItemModel):
         )
         self.beginInsertRows(parent, first, last-1)
 
-        self.cache.queue.extend(urls)
+        self.cache.extend_queue(urls)
         self.cache.last_index += len(urls)
 
         logger.debug("Finishing inserting rows...")
@@ -331,4 +344,4 @@ class ObjectsModel(QtCore.QAbstractItemModel):
                 return
 
             self.cache.populate(search_term)
-            self.proxy_model.sort(0, self.sort_order)
+            self.proxy_model.sort(0, self.proxy_model.sort_order)

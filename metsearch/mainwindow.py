@@ -97,6 +97,10 @@ class MainWindow(QtCore.QObject):
 
     def connect_signals(self):
         """Connect signals and slots."""
+        self.model.cache.requests_finished.connect(
+            self.proxy_model.invalidateFilter
+        )
+
         self.model.cache.timer_progress.connect(self.update_countdown)
 
         self.ui.classification_combox.currentTextChanged.connect(
