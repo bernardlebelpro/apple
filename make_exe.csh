@@ -1,4 +1,11 @@
 # -----------------------------------------------------------------------------
+# Remove __pycache__ directory.
+
+if ( -d metsearch/__pycache__ ) then
+    rm -Rf metsearch/__pycache__
+endif
+
+# -----------------------------------------------------------------------------
 # Make copy of source code next to the metsearch script.
 
 setenv METSEARCH_DIR scripts/metsearch

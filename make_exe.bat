@@ -1,6 +1,9 @@
 :: DO NOT DOUBLE-CLICK THIS BATCH FILE TO RUN IT!!!!
 :: You must start a command prompt and execute it.
 
+:: Remove the __pycache__ directory.
+rmdir .\metsearch\__pycache__ /s /q
+
 :: Make copy of source code next to the metsearch script.
 set METSEARCH_DIR=.\scripts\metsearch
 mkdir %METSEARCH_DIR%
