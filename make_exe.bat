@@ -1,12 +1,15 @@
 :: DO NOT DOUBLE-CLICK THIS BATCH FILE TO RUN IT!!!!
 :: You must start a command prompt and execute it.
 
-set ZIPLINE_DIR=.\src\cmd\zipline
+:: Make copy of source code next to the metsearch script.
+set METSEARCH_DIR=.\scripts\metsearch
+mkdir %METSEARCH_DIR%
+xcopy .\metsearch %METSEARCH_DIR% /E
 
-mkdir %ZIPLINE_DIR%
-xcopy .\..\..\zipline %ZIPLINE_DIR% /E
-:: "pyinstaller" --clean --noconfirm --upx-dir .\src\misc\upx-5.0.2-win64 zipline-gui.spec
-"pyinstaller" --clean --noconfirm --upx-dir .\src\misc\upx-5.0.2-win64 zipline-gui.spec
+"pyinstaller" --clean --noconfirm --noconsole --onefile ^
+--add-data ".\metsearch\metsearch.ui;metsearch" ^
+-i .\icon\themet.ico ^
+.\scripts\metsearch-gui
 
-rmdir %ZIPLINE_DIR% /s /q
-copy .\src\cmd\zipline-gui.bat .\dist\zipline-gui\zipline-gui.bat
+:: Remove the copy of the source code.
+rmdir %METSEARCH_DIR% /s /q

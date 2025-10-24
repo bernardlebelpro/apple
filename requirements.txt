@@ -1,2 +1,3 @@
+pyinstaller
 PySide6
 requests
