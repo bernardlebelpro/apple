@@ -1,12 +1,12 @@
 from contextlib import contextmanager
 import logging
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 import traceback
-from typing import Any, Dict, Generator, List, Union
+from typing import Any, Union
 
 from metsearch.contants import ObjectFields, Requests
-from metsearch.objectcache import ObjectsCache
+from metsearch.objectcache import ObjectCache
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,37 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
         self.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         self.setDynamicSortFilter(True)
 
+        self._image_only: bool = False
+
+    # -------------------------------------------------------------------------
+    # PROPERTIES
+    # -------------------------------------------------------------------------
+
+    @property
+    def image_only(self) -> bool:
+        """Get the image-only filter state.
+
+        Returns:
+            bool
+        """
+        return self._image_only
+
+    @image_only.setter
+    def image_only(self, value: bool):
+        """Update the image-only filter state.
+
+        This invalidates this proxy model's filter.
+
+        Args:
+            value (bool): The new filter state.
+        """
+        self._image_only = value
+        self.invalidateFilter()
+
+    # -------------------------------------------------------------------------
+    # RE-IMPLEMENTED METHODS
+    # -------------------------------------------------------------------------
+
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()):
         return 1
 
@@ -30,17 +61,26 @@ class ObjectsProxyModel(QtCore.QSortFilterProxyModel):
             source_row: int,
             source_parent: QtCore.QModelIndex
     ) -> bool:
-        # This is called only when the model's row count changes.
+        # This is called only when the model's row count changes,
+        # or when invalidate() and invalidateFilter() are called.
         # This means we can't rely on this method to hide the row
         # when we know if the requested url returns a good object.
 
         model = self.sourceModel()
-        object_url = model.cache.urls[source_row]
+        url = model.cache.urls[source_row]
 
         # This is only moderately reliable,
         # it will be accurate only for urls that that been processed.
         # For fresh new rows, we may not know yet if the url is bad.
-        if object_url in model.cache.bad_urls:
+        if url in model.cache.bad_urls:
+            return False
+
+        document = model.cache.get_object(url)
+        if (
+                document and
+                self.image_only and
+                not document[ObjectFields.PRIMARY_IMAGE]
+        ):
             return False
 
         return super().filterAcceptsRow(source_row, source_parent)
@@ -58,7 +98,7 @@ class ObjectsModel(QtCore.QAbstractItemModel):
     ) -> None:
         super().__init__(parent)
 
-        self._cache = ObjectsCache(proxy_model)
+        self._cache = ObjectCache(proxy_model)
         self._proxy_model = proxy_model
         self._sort_order = QtCore.Qt.SortOrder.AscendingOrder
 
@@ -67,21 +107,40 @@ class ObjectsModel(QtCore.QAbstractItemModel):
     # -------------------------------------------------------------------------
 
     @property
-    def cache(self) -> ObjectsCache:
+    def cache(self) -> ObjectCache:
+        """Get the internal object cache.
+
+        Returns:
+            metsearch.objectcache.ObjectCache:
+        """
         return self._cache
 
     @property
     def proxy_model(self) -> ObjectsProxyModel:
+        """Get the proxy model that uses this model.
+
+        Returns:
+            metsearch.model.ObjectsProxyModel:
+        """
         return self._proxy_model
 
     @property
     def sort_order(self) -> QtCore.Qt.SortOrder:
+        """Get the current sort order.
+
+        Returns:
+            QtCore.Qt.SortOrder:
+        """
         return self._sort_order
 
     @sort_order.setter
     def sort_order(self, value: QtCore.Qt.SortOrder):
         self._sort_order = value
         self.proxy_model.sort(0, value)
+
+    # -------------------------------------------------------------------------
+    # SETUP METHODS
+    # -------------------------------------------------------------------------
 
     def connect_signals(self):
         """Connect signals and slots."""
@@ -180,15 +239,34 @@ class ObjectsModel(QtCore.QAbstractItemModel):
         return self.cache.last_index + 1
 
     # -------------------------------------------------------------------------
-    # METHODS
+    # SLOT METHODS
     # -------------------------------------------------------------------------
 
     @QtCore.Slot(str)
     def cache_updated(self, url: str):
         """Called when the document cache has changed, relay that to the views.
+
+        Args:
+            url (str): The object URL that has been updated in the cache.
         """
         index = self.index(row=self.cache.urls.index(url), column=0)
         self.dataChanged.emit(index, index)
+
+    @QtCore.Slot(int)
+    def update_countdown(self, seconds: int):
+        """Re-emits the timer progress signal.
+
+        This causes the countdown in the main window to be updated.
+
+        Args:
+            seconds (int): The number of seconds elapsed since the
+                timer started.
+        """
+        self.timer_progress.emit(seconds)
+
+    # -------------------------------------------------------------------------
+    # METHODS
+    # -------------------------------------------------------------------------
 
     @contextmanager
     def reset(self):
@@ -217,7 +295,3 @@ class ObjectsModel(QtCore.QAbstractItemModel):
 
             self.cache.populate(search_term)
             self.proxy_model.sort(0, self.sort_order)
-
-    @QtCore.Slot(int)
-    def update_countdown(self, seconds: int):
-        self.timer_progress.emit(seconds)

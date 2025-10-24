@@ -11,7 +11,7 @@ from metsearch.timer import Timer
 logger = logging.getLogger(__name__)
 
 
-class ObjectsCache(QtCore.QObject):
+class ObjectCache(QtCore.QObject):
     """Object documents database.
 
     Handles the fetching and caching of documents in an async way.
@@ -20,9 +20,15 @@ class ObjectsCache(QtCore.QObject):
     # Emitted after the cache has been updated.
     cache_updated = QtCore.Signal(str)
 
+    # Emitted every second.
     timer_progress = QtCore.Signal(int)
 
     def __init__(self, proxy_model):
+        """Initialize the object cache.
+
+        Args:
+            proxy_model (ObjectsProxyModel): The proxy model of the list view.
+        """
         super().__init__()
 
         self._bad_urls: List[str] = []
@@ -101,6 +107,15 @@ class ObjectsCache(QtCore.QObject):
 
     @property
     def requested_urls(self) -> List[str]:
+        """Get the list of object URLs that have been requested.
+
+        Note that this list does not automatically mean that the objects
+        have had their documents cached, it *literally* just mean that the
+        we the URLs have been requested.
+
+        Returns:
+            list[str]
+        """
         return self._requested_urls
 
     @property
@@ -121,7 +136,11 @@ class ObjectsCache(QtCore.QObject):
     # -------------------------------------------------------------------------
 
     def cache_object(self, reply: QtNetwork.QNetworkReply):
-        """Cache the object document."""
+        """Cache the object document.
+
+        Args:
+            reply (QtNetwork.QNetworkReply): The reply from the network request.
+        """
         url = reply.url().toString()
         self.processed_urls.append(url)
 
@@ -162,9 +181,15 @@ class ObjectsCache(QtCore.QObject):
             self.cache_updated.emit(url)
 
     def execute_request(self, url: str):
+        """Initiate a network request for an object URL.
+
+        Args:
+            url (str): The requested object's URL.
+        """
         request = QtNetwork.QNetworkRequest(QtCore.QUrl(url))
         request.setRawHeader(b"Content-Type", b"application/json")
         request.setRawHeader(b"Accept", b"application/json")
+        request.setRawHeader(b"Accept-Language", b"en-US,en;q=0.9")
 
         reply = self.network_manager.get(request)
         reply.finished.connect(
@@ -172,7 +197,15 @@ class ObjectsCache(QtCore.QObject):
         )
 
     def get_object(self, url: str) -> Dict:
-        """Get the object document from the cache or download it."""
+        """Get the object document from the cache or download it.
+
+        Args:
+            url (str): The requested object's URL.
+
+        Returns:
+            dict: The object document. If the object doesn't have a document
+            yet, an empty dict is returned.
+        """
 
         if url in self._requested_urls:
             return self.objects[url]
@@ -182,12 +215,16 @@ class ObjectsCache(QtCore.QObject):
 
         return {}
 
-        # request = QtNetwork.QNetworkRequest(url)
-        # request.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
-        # request.setRawHeader(b"Accept-Encoding", b"gzip, deflate, br")
-        # request.setRawHeader(b"Accept-Language", b"en-US,en;q=0.9")
-
     def populate(self, search_term: Union[str, None] = None):
+        """Populate cache with the initial search results.
+
+        After getting the initial search results, launches a queue that is
+        evaluated every minute for new requested objects.
+
+        Args:
+            search_term (str|None): A search string (e.g. "apple", "cat", etc).
+        """
+
         # Get all the object IDs for the search term.
 
         url = f"{Endpoints.BASE}{Endpoints.SEARCH}"
@@ -221,6 +258,11 @@ class ObjectsCache(QtCore.QObject):
         self.process_queue()
 
     def process_queue(self):
+        """Process the queue of requests.
+
+        Calling this method starts an infinite loop of sorts.
+        This is what we want.
+        """
         logger.debug(
             "Processing queue, currently has %s items...",
             len(self.queue)
@@ -246,10 +288,17 @@ class ObjectsCache(QtCore.QObject):
         )
 
     def reset(self):
+        """Reset the cache in its initial state.
+
+        Well, not entirely. It only resets the attributes relevant to the
+        the current search.
+        """
         self._urls = []
         self.last_index = -1
 
-    def timer_timeout(self, *args):
+    @QtCore.Slot()
+    def timer_timeout(self):
+        """Evaluate the state of the timer at every second."""
         if self.timer.count == Requests.SECONDS:
             self.timer.stop()
             self.process_queue()

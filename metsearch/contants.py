@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class Endpoints:
+    """Service endpoints."""
+
     BASE = "https://collectionapi.metmuseum.org/public/collection/v1"
     OBJECTS = "/objects"
     SEARCH = "/search"
@@ -10,6 +12,8 @@ class Endpoints:
 
 @dataclass
 class ObjectFields:
+    """Keys in object documents."""
+
     ARTIST_DISPLAY_NAME = "artistDisplayName"
     CLASSIFICATION = "classification"
     CULTURE = "culture"
@@ -23,6 +27,8 @@ class ObjectFields:
 
 @dataclass
 class DisplayFields:
+    """Pretty names for metadata fields."""
+
     TITLE = "Title"
     ARTIST = "Artist"
     MEDIUM = "Medium"
@@ -64,6 +70,7 @@ class DisplayFields:
 
 @dataclass
 class Requests:
+    """Request configuration."""
     SECONDS = 60
     INTERVAL = 1000
     MAX_RESULTS = 80
@@ -71,12 +78,16 @@ class Requests:
 
 @dataclass
 class ResponseFields:
+    """Keys in the service responses."""
+
     OBJECT_IDS = "objectIDs"
     TOTAL = "total"
 
 
 @dataclass
 class SearchKeywords:
+    """URL parameters for search requests."""
+
     ARTIST_OR_CULTURE = "artistOrCulture"
     DEPARTMENT_ID = "departmentID"
     GEO_LOCATION = "geoLocation"

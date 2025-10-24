@@ -2,10 +2,11 @@ import argparse
 from contextlib import contextmanager
 import logging
 import os
-from PySide6 import QtCore, QtUiTools, QtWidgets
+from PySide6 import QtCore, QtUiTools, QtWidgets, QtGui
 from typing import Union
 
 from metsearch.contants import DisplayFields, ObjectFields
+from metsearch.imagecache import ImageCache
 from metsearch.model import ObjectsModel, ObjectsProxyModel
 
 
@@ -22,6 +23,8 @@ class MainWindow(QtCore.QObject):
     def __init__(self, parent: Union[QtWidgets.QWidget, None] = None):
         super().__init__(parent)
 
+        self._image_widget = QtWidgets.QLabel()
+        self._images = ImageCache()
         self._ui: Union[QtWidgets.QMainWindow, None] = None
         self._proxy_model = ObjectsProxyModel(parent=self.ui)
         self._model = ObjectsModel(
@@ -39,15 +42,48 @@ class MainWindow(QtCore.QObject):
     # -------------------------------------------------------------------------
 
     @property
+    def image_widget(self) -> QtWidgets.QLabel:
+        """The image that holds the image for the current selection.
+
+        Returns:
+            QtWidgets.QLabel
+        """
+        return self._image_widget
+
+    @property
+    def images(self) -> ImageCache:
+        """The cache of images.
+
+        Returns:
+            metsearch.imagecache.ImageCache:
+        """
+        return self._images
+
+    @property
     def model(self) -> ObjectsModel:
+        """The model for the list view.
+
+        Returns:
+            metsearch.model.ObjectsModel
+        """
         return self._model
 
     @property
     def proxy_model(self) -> ObjectsProxyModel:
+        """The proxy model for the list view.
+
+        Returns:
+            metsearch.model.ObjectsProxyModel
+        """
         return self._proxy_model
 
     @property
     def selection_model(self) -> QtCore.QItemSelectionModel:
+        """The selection model for the list view.
+
+        Returns:
+            QtCore.QItemSelectionModel
+        """
         return self._selection_model
 
     @property
@@ -55,7 +91,7 @@ class MainWindow(QtCore.QObject):
         """Get the main window from Loading the UI file.
 
         Returns:
-            QtCore.QMainWindow: The main window.
+            QtCore.QMainWindow
         """
         return self._ui
 
@@ -64,6 +100,7 @@ class MainWindow(QtCore.QObject):
     # -------------------------------------------------------------------------
 
     def connect_signals(self):
+        """Connect signals and slots."""
         self.model.cache.timer_progress.connect(self.update_countdown)
 
         self.ui.classification_combox.currentTextChanged.connect(
@@ -92,8 +129,8 @@ class MainWindow(QtCore.QObject):
             self.selected_row_changed
         )
 
-
     def setup_ui(self):
+        """Assemble and configure the UI."""
         loader = QtUiTools.QUiLoader()
         self._ui = loader.load(UI_FILEPATH, parentWidget=None)
 
@@ -110,6 +147,11 @@ class MainWindow(QtCore.QObject):
         )
         self.ui.results_view.setModel(self._proxy_model)
         self.ui.results_view.setSelectionModel(self.selection_model)
+
+        layout = QtWidgets.QVBoxLayout()
+        self.ui.image_widget.setLayout(layout)
+        layout.addWidget(self.image_widget)
+        self.set_image()
 
         form_layout = self.ui.metadata_widget.layout()
         for display_name in DisplayFields.FIELDS:
@@ -128,7 +170,33 @@ class MainWindow(QtCore.QObject):
 
     @QtCore.Slot()
     def image_only_changed(self, new_value: bool):
-        pass
+        """Update the UI when the image-only filter state has changed.
+
+        Args:
+            new_value (bool): The new image-only filter state.
+        """
+        # Record the model index of the selected row.
+        # After the proxy model updates, we use that index
+        # to select the same row in the updated proxy model.
+        index = None
+        selected = self.selection_model.selectedIndexes()
+        if selected:
+            proxy_index = selected[0]
+            index = self.proxy_model.mapToSource(proxy_index)
+
+        self.proxy_model.image_only = new_value
+
+        if index is not None:
+            proxy_index = self.proxy_model.mapFromSource(index)
+            self.selection_model.setCurrentIndex(
+                proxy_index,
+                self.selection_model.SelectionFlag.ClearAndSelect
+            )
+
+            self.selected_row_changed(
+                self.selection_model.selection(),
+                QtCore.QItemSelection()
+            )
 
     @QtCore.Slot()
     def reset_clicked(self):
@@ -150,8 +218,11 @@ class MainWindow(QtCore.QObject):
             self.model.reset()
             self.clear_metadata()
 
+        self.proxy_model.invalidate()
+
     @QtCore.Slot()
     def search_text_changed(self):
+        """Update the UI when the search text has changed."""
         self.clear_metadata()
         text = self.ui.searchtext_lineedit.text()
         self.model.search(search_term=text)
@@ -162,29 +233,51 @@ class MainWindow(QtCore.QObject):
             selected: QtCore.QItemSelection,
             deselected: QtCore.QItemSelection
     ):
-        """Update the right-side widgets when an object is selected in the list."""
+        """Update the right-side widgets when an object is selected in the list.
+
+        Args:
+            selected (QtCore.QItemSelection): The selected items.
+            deselected (QtCore.QItemSelection): The deselected items.
+                Since our selection mode is SingleSelect, this will always
+                be empty.
+        """
+        self.set_image()
+
         indices = selected.indexes()
         if indices:
-            for index in indices:
-                row = index.row()
-                url = self.model.cache.urls[row]
-                document = self.model.cache.get_object(url)
-                layout = self.ui.metadata_widget.layout()
+            proxy_index = indices[0]
+            index = self.proxy_model.mapToSource(proxy_index)
+            row = index.row()
+            object_url = self.model.cache.urls[row]
+            document = self.model.cache.get_object(object_url)
 
-                for i in range(layout.rowCount()):
-                    display_name = layout.itemAt(
-                        i,
-                        layout.ItemRole.LabelRole
-                    ).widget().text()
+            # ---------
+            # Thumbnail
 
-                    label = layout.itemAt(
-                        i,
-                        layout.ItemRole.FieldRole
-                    ).widget()
+            image_url = document.get(ObjectFields.PRIMARY_IMAGE)
+            if image_url:
+                pixmap = self.images.get_pixmap(image_url)
+                self.set_image(pixmap)
 
-                    key = DisplayFields.FIELDS_TO_OBJECT_FIELDS[display_name]
-                    value = document.get(key, "")
-                    label.setText(str(value))
+            # --------
+            # Metadata
+
+            layout = self.ui.metadata_widget.layout()
+
+            for i in range(layout.rowCount()):
+                display_name = layout.itemAt(
+                    i,
+                    layout.ItemRole.LabelRole
+                ).widget().text()
+
+                label = layout.itemAt(
+                    i,
+                    layout.ItemRole.FieldRole
+                ).widget()
+
+                key = DisplayFields.FIELDS_TO_OBJECT_FIELDS[display_name]
+                value = document.get(key, "")
+                label.setText(str(value))
         else:
             self.clear_metadata()
 
@@ -200,6 +293,11 @@ class MainWindow(QtCore.QObject):
 
     @QtCore.Slot(int)
     def update_countdown(self, seconds: int):
+        """Update the countdown label with the new number of seconds.
+
+        Args:
+            seconds (int): The number of seconds remaining for the timer.
+        """
         self.ui.countdown_label.setText(str(seconds))
 
     # -------------------------------------------------------------------------
@@ -234,6 +332,7 @@ class MainWindow(QtCore.QObject):
                 )
 
     def clear_metadata(self):
+        """Clear all metadata values."""
         layout = self.ui.metadata_widget.layout()
         for i in range(layout.rowCount()):
             layout.itemAt(
@@ -243,6 +342,15 @@ class MainWindow(QtCore.QObject):
 
     def get_classifications(self):
         pass
+
+    def set_image(self, pixmap: Union[QtGui.QPixmap, None] = None):
+        """Update the image label with a pixmap.
+
+        Args:
+            pixmap (QtGui.QPixmap|None): The pixmap to display. If None,
+                the default pixmap is used.
+        """
+        self.image_widget.setPixmap(pixmap or self.images.default_pixmap)
 
 
 if __name__ == "__main__":
