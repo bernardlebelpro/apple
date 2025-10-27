@@ -58,13 +58,12 @@ class ObjectCache(QtCore.QObject):
         super().__init__()
 
         self._bad_urls: List[str] = []
-        self._counter: int = 0
         self._last_index: int = -1
         self._network_manager = QtNetwork.QNetworkAccessManager(self)
         self._urls: List[str] = []
         self._objects: Dict[str, Dict] = {}
         self._proxy_model = proxy_model
-        self._queue: List[Request] = []
+        self._queue: List[List[Request]] = []
         self._requested_urls: List[str] = []
 
         self._processed_requests: Dict[int, Dict] = {
@@ -91,14 +90,6 @@ class ObjectCache(QtCore.QObject):
         return self._bad_urls
 
     @property
-    def counter(self) -> int:
-        return self._counter
-
-    @counter.setter
-    def counter(self, value: int):
-        self._counter = value
-
-    @property
     def last_index(self) -> int:
         """Get the index of the last object ID we fetched.
 
@@ -119,11 +110,6 @@ class ObjectCache(QtCore.QObject):
     @property
     def network_manager(self) -> QtNetwork.QNetworkAccessManager:
         return self._network_manager
-
-    @property
-    def objects(self) -> Dict[str, Dict]:
-        """All the object documents we fetched by the last search."""
-        return self._objects
 
     @property
     def processed_requests(self) -> Dict[int, Dict]:
@@ -151,7 +137,7 @@ class ObjectCache(QtCore.QObject):
         return self._proxy_model
 
     @property
-    def queue(self) -> List[Request]:
+    def queue(self) -> List[List[Request]]:
         return self._queue
 
     @property
@@ -196,8 +182,9 @@ class ObjectCache(QtCore.QObject):
             "total": len(urls)
         }
 
+        self.requested_urls.extend(urls)
         requests = [Request(key=key, url=url) for url in urls]
-        self.queue.extend(requests)
+        self.queue.append(requests)
 
     def cache_object(
             self,
@@ -227,7 +214,7 @@ class ObjectCache(QtCore.QObject):
             if byte_array:
                 logger.debug("Getting URL: Success [%s]", url)
                 document = json.loads(str(byte_array.data(), "utf-8"))
-                self.objects[url] = document
+                self._objects[url] = document
                 self.cache_updated.emit(url)
             else:
                 # It's highly unlikely that we'll get an empty document
@@ -277,27 +264,15 @@ class ObjectCache(QtCore.QObject):
             lambda: self.cache_object(reply, key=key)
         )
 
-    def get_object(self, url: str, key: Union[int, None] = None) -> Dict:
-        """Get the object document from the cache or download it.
-
-        Args:
-            url (str): The requested object's URL.
-            key (int|None): A key for the request in the processed_requests
-                dict. If not None, will increment the count of process requests
-                by one for this key when the request completes.
+    def get_object(self, url: str) -> Dict:
+        """Get the object document for the given URL.
 
         Returns:
-            dict: The object document. If the object doesn't have a document
-            yet, an empty dict is returned.
+            dict: Object document if there is one, otherwise an empty dict.
+            There may not be a document if either the request for the URL
+            hasn't been processed yet, or if the service didn't return one.
         """
-
-        if url in self.requested_urls:
-            return self.objects[url]
-
-        self.requested_urls.append(url)
-        self.execute_request(url=url, key=key)
-
-        return {}
+        return self._objects.get(url, {})
 
     def populate(self, search_term: Union[str, None] = None):
         """Populate cache with the initial search results.
@@ -330,7 +305,7 @@ class ObjectCache(QtCore.QObject):
         for object_id in object_ids:
             url = f"{Endpoints.BASE}{Endpoints.OBJECTS}/{object_id}"
             self.urls.append(url)
-            self.objects[url] = {}
+            self._objects[url] = {}
 
         logger.info("Total object count: %s", len(self.urls))
 
@@ -348,20 +323,17 @@ class ObjectCache(QtCore.QObject):
         This is what we want.
         """
         logger.debug(
-            "Processing queue, currently has %s items...",
-            len(self.queue)
+            "Processing queue, currently has a total of %s items...",
+            sum(len(requests) for requests in self.queue)
         )
 
-        self.counter = 0
-        while self.counter < Requests.MAX_RESULTS and self.queue:
-            request = self.queue.pop(0)
-            self.get_object(request.url, key=request.key)
-            self.counter += 1
+        if self.queue:
+            requests = self.queue.pop(0)
+            logger.debug("Processing %s requests...", len(requests))
+            for request in requests:
+                self.execute_request(url=request.url, key=request.key)
 
-        logger.debug(
-            "Finished processing queue, has %s items left.",
-            len(self.queue)
-        )
+        logger.debug("Finished processing queue.")
 
         self.timer.start()
         logger.debug(
