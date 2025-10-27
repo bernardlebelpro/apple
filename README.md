@@ -18,16 +18,6 @@ That said, perhaps the Linux executable will work on MacOS?
 
 ## Known issues and limitations
 
-### Crashes
-
-After the initial batch of requests are made, getting the next batch crashes
-the app without any error message or traceback (see next section for details 
-on the "batching" of requests).
-
-The crash happens after we add rows to the internal model to reflect the 
-number of new requests. I'm not sure why this is happening, and in the 
-interest of time I decided to leave it as is.
-
 ### Minute-long cycles for processing requests
 
 The service keeps track of how many requests we make per minute. 
