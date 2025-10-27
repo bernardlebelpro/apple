@@ -236,15 +236,12 @@ class ObjectsModel(QtCore.QAbstractItemModel):
         if first == len(self.cache.urls):
             return
 
-        last = first + Requests.MAX_RESULTS
+        remaining = len(self.cache.urls) - first
+        if remaining > Requests.MAX_RESULTS:
+            last = first + Requests.MAX_RESULTS
+        else:
+            last = first + remaining
         count = last - first
-
-        logger.debug(
-            "Getting next slice of URLs [%s-%s] (%s items)",
-            first,
-            last,
-            count
-        )
         urls = self.cache.urls[first:last]
 
         logger.debug("Begin inserting rows %s-%s (%s items)...",
@@ -252,6 +249,7 @@ class ObjectsModel(QtCore.QAbstractItemModel):
             last-1,
             count
         )
+        self.cache.last_index += len(urls)
         self.beginInsertRows(parent, first, last-1)
 
         self.cache.extend_queue(urls)
