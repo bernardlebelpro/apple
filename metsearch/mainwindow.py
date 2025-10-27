@@ -86,6 +86,8 @@ class MainWindow(QtCore.QObject):
 
     def connect_signals(self):
         """Connect signals and slots."""
+        self.images.image_updated.connect(self.set_image)
+
         self.model.cache.requests_finished.connect(
             self.proxy_model.invalidateFilter
         )
@@ -302,11 +304,45 @@ class MainWindow(QtCore.QObject):
                 layout.ItemRole.FieldRole
             ).widget().setText("")
 
-    def set_image(self, pixmap: Union[QtGui.QPixmap, None] = None):
+    def get_selected_url(self) -> Union[str, None]:
+        """Get the selected row's URL.
+
+        Returns:
+            str|None: The selected row's URL, or None if no row is selected.
+        """
+        selection_model = self.ui.results_view.selectionModel()
+        selected = selection_model.selectedIndexes()
+        if not selected:
+            return
+
+        proxy_index = selected[0]
+        index = self.proxy_model.mapToSource(proxy_index)
+        row = index.row()
+        url = self.model.cache.urls[row]
+        return url
+
+    def set_image(
+            self,
+            pixmap: Union[QtGui.QPixmap, None] = None,
+            url: Union[str, None] = None
+    ):
         """Update the image label with a pixmap.
 
         Args:
             pixmap (QtGui.QPixmap|None): The pixmap to display. If None,
                 the default pixmap is used.
+            url (str): An object URL corresponding to the image we
+                are setting. If not None, ensure that the the image is
+                set only if the object is selected in the list.
+                This is to prevents long running image requests from
+                randomly updating the image while looking at a different
+                document.
         """
-        self.ui.image_label.setPixmap(pixmap or self.images.default_pixmap)
+        pixmap = pixmap or self.images.default_pixmap
+
+        if url:
+            selected_url = self.get_selected_url()
+            if selected_url == url:
+                pixmap = self.images.get_pixmap(url)
+
+        self.ui.image_label.setPixmap(pixmap)
