@@ -207,7 +207,7 @@ class ObjectsModel(QtCore.QAbstractItemModel):
     ) -> bool:
         if parent.isValid():
             return False
-        return self.cache.last_index+1 < len(self.cache.urls)
+        return len(self.cache.requested_urls) < len(self.cache.urls)
 
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()):
         return 1
@@ -232,10 +232,14 @@ class ObjectsModel(QtCore.QAbstractItemModel):
         if parent.isValid():
             return
 
-        first = self.cache.last_index + 1
-        if first == len(self.cache.urls):
+        # Here we're being zealously defensive.
+        # It's very likely that canFetchMore() was just called before
+        # fetchMore(), but we're checking in case something about the queue
+        # has changed the cache numbers.
+        if not self.canFetchMore():
             return
 
+        first = self.cache.last_index + 1
         remaining = len(self.cache.urls) - first
         if remaining > Requests.MAX_RESULTS:
             last = first + Requests.MAX_RESULTS
